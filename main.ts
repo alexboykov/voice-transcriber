@@ -31,8 +31,8 @@ const COPY = {
     start: "Start voice transcription", command: "Start or stop voice transcription",
     addKey: "Add an OpenAI API key in Voice Transcriber settings first.", unavailable: "Audio recording is not available on this device.",
     recording: "Recording… Tap the microphone again to transcribe.", stop: "Stop and transcribe", empty: "The recording was empty.",
-    transcribing: "Transcribing…", analyzing: "Analyzing reflection…", inserted: "Transcription inserted.",
-    failed: "Transcription failed", insightFailed: "Transcript is ready, but insight generation failed",
+    transcribing: "Transcribing…", formatting: "Formatting paragraphs…", analyzing: "Analyzing reflection…", inserted: "Transcription inserted.",
+    failed: "Transcription failed", formattingFailed: "Transcript is ready, but paragraph formatting failed", insightFailed: "Transcript is ready, but insight generation failed",
     interfaceLanguage: "Interface language", interfaceLanguageDesc: "Follow Obsidian's language by default. Unsupported languages fall back to English.",
     system: "System language", apiKey: "OpenAI API key", stored: "Stored only in this device's local app storage. ", createKey: "Create an API key", billing: "Set up billing",
     warning: "Obsidian does not expose Keychain/secure storage to community plugins. The key is not synced by this plugin, but anyone with access to this device's app data may be able to read it. Use a restricted OpenAI project key with a spending limit.",
@@ -161,7 +161,14 @@ export default class VoiceTranscriberPlugin extends Plugin {
 
     const notice = new Notice(this.copy().transcribing, 0);
     try {
-      const transcript = await this.transcribe(audio);
+      const rawTranscript = await this.transcribe(audio);
+      notice.setMessage(this.copy().formatting);
+      let transcript = rawTranscript;
+      try {
+        transcript = await this.formatTranscript(rawTranscript);
+      } catch (error) {
+        new Notice(`${this.copy().formattingFailed}: ${errorMessage(error)}`, 8000);
+      }
       let insertion = transcript;
       if (this.settings.cookGreuterInsights) {
         notice.setMessage(this.copy().analyzing);
@@ -221,6 +228,50 @@ export default class VoiceTranscriberPlugin extends Plugin {
     const editor: Editor = view.editor;
     editor.replaceSelection(text);
     editor.focus();
+  }
+
+  private async formatTranscript(transcript: string): Promise<string> {
+    const response = await requestUrl({
+      url: "https://api.openai.com/v1/chat/completions",
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.getApiKey()}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "gpt-5.6",
+        messages: [
+          {
+            role: "system",
+            content: "Format a speech transcript into coherent semantic paragraphs. Preserve every claim, detail, word choice, tone, language, and ordering. Do not summarize, rewrite, sanitize, correct facts, add headings, add lists, add commentary, or answer the speaker. Only add paragraph breaks where the topic, argument, event, or reflective focus changes. Keep short transcripts as one paragraph. Return plain text with a single blank line between paragraphs."
+          },
+          { role: "user", content: transcript }
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "formatted_transcript",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: { formattedText: { type: "string" } },
+              required: ["formattedText"],
+              additionalProperties: false
+            }
+          }
+        }
+      }),
+      throw: false
+    });
+    if (response.status < 200 || response.status >= 300) {
+      const message = response.json?.error?.message;
+      throw new Error(typeof message === "string" ? message : `OpenAI returned HTTP ${response.status}`);
+    }
+    const content = response.json?.choices?.[0]?.message?.content;
+    if (typeof content !== "string") throw new Error("OpenAI returned no formatted transcript");
+    const parsed: unknown = JSON.parse(content);
+    if (!isFormattedTranscript(parsed)) throw new Error("OpenAI returned an invalid formatted transcript");
+    return parsed.formattedText.trim();
   }
 
   private async analyzeReflection(transcript: string): Promise<ReflectionAnalysis> {
@@ -386,6 +437,11 @@ function isReflectionAnalysis(value: unknown): value is ReflectionAnalysis {
     && typeof candidate.nextLevelResponse === "string"
     && typeof candidate.mainInsight === "string"
     && typeof candidate.question === "string";
+}
+
+function isFormattedTranscript(value: unknown): value is { formattedText: string } {
+  if (typeof value !== "object" || value === null) return false;
+  return typeof (value as Record<string, unknown>).formattedText === "string";
 }
 
 function concatenate(parts: Uint8Array[]): ArrayBuffer {
