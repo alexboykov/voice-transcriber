@@ -11,6 +11,7 @@ Capture thoughts without leaving Obsidian. Record from the ribbon on desktop or 
 - One microphone ribbon button to start and stop recording.
 - The same action is available from the command palette.
 - Uses the latest high-accuracy `gpt-transcribe` by default, with older transcription models available as fallbacks.
+- Automatically splits transcripts into coherent semantic paragraphs without summarizing or rewriting them.
 - Optional language hint.
 - Optional Cook-Greuter E4–E6 estimate, next-level response, main insight, and developmental question for personal reflections; disabled by default.
 - The plugin follows Obsidian's language setting and currently falls back to English for every locale.
