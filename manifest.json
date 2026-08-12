@@ -1,0 +1,10 @@
+{
+  "id": "voice-transcriber",
+  "name": "Voice Transcriber",
+  "version": "1.0.0",
+  "minAppVersion": "1.5.0",
+  "description": "Record speech and insert an OpenAI transcription into the active note.",
+  "author": "Alexander Boykov",
+  "authorUrl": "https://github.com/alexboykov",
+  "isDesktopOnly": false
+}
